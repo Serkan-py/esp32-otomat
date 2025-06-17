@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Otomat Kayıtları</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"></script>
+  <style>
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #999; padding: 10px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>Otomat Kayıtları</h1>
+  <table>
+    <thead>
+      <tr><th>Kullanıcı</th><th>Ürün</th><th>Tarih</th><th>Saat</th></tr>
+    </thead>
+    <tbody id="dataBody"></tbody>
+  </table>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAV8qDKeSgE4jkN1d5nHBCrYAeV1DEIn8o",
+      authDomain: "otomatesp32.firebaseapp.com",
+      databaseURL: "https://otomatesp32-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "otomatesp32",
+      storageBucket: "otomatesp32.firebasestorage.app",
+      messagingSenderId: "229365905670",
+      appId: "1:229365905670:web:06dbc6b0da8ac6cd9f8687",
+      measurementId: "G-06ZY00K7J8"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const refKayit = ref(db, "kayitlar");
+    onValue(refKayit, (snapshot) => {
+      const data = snapshot.val();
+      const tbody = document.getElementById("dataBody");
+      tbody.innerHTML = "";
+      for (let key in data) {
+        let row = data[key];
+        let tr = document.createElement("tr");
+        tr.innerHTML = `<td>${row.kullanici}</td><td>${row.urun}</td><td>${row.tarih}</td><td>${row.saat}</td>`;
+        tbody.appendChild(tr);
+      }
+    });
+  </script>
+</body>
+</html>
