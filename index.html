@@ -1,52 +1,202 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-  <title>Otomat Kayıtları</title>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Otomat Paneli</title>
   <style>
-    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-    th, td { border: 1px solid #999; padding: 10px; text-align: center; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f5f5f5; color: #222; transition: background 0.3s, color 0.3s; }
+    .dark-mode { background: #121212; color: #f5f5f5; }
+    .tabs { display: flex; background: #2c3e50; flex-wrap: wrap; }
+    .tab { flex: 1; min-width: 100px; text-align: center; padding: 1em; color: white; cursor: pointer; }
+    .tab.active { background: #34495e; font-weight: bold; }
+    .content { display: none; padding: 1em; }
+    .content.active { display: block; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; background: white; }
+    th, td { padding: 0.5em; border: 1px solid #ccc; text-align: left; }
+    select, input, button { padding: 0.5em; margin-top: 0.5em; font-size: 1em; }
+    .dark-mode table { background: #1e1e1e; }
+    .dark-mode th, .dark-mode td { border-color: #444; }
+    canvas { margin-top: 1em; max-width: 100%; }
+    @media screen and (max-width: 600px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      td { border: none; position: relative; padding-left: 50%; margin-bottom: 1em; }
+      td:before { position: absolute; top: 0; left: 0; width: 45%; white-space: nowrap; font-weight: bold; }
+      td:nth-child(1):before { content: "Kullanıcı"; }
+      td:nth-child(2):before { content: "Ürün"; }
+      td:nth-child(3):before { content: "Tarih"; }
+    }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>Otomat Kayıtları</h1>
-  <table>
-    <thead>
-      <tr><th>Kullanıcı</th><th>Ürün</th><th>Tarih</th><th>Saat</th></tr>
-    </thead>
-    <tbody id="dataBody"></tbody>
-  </table>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('Makine1')">Makine1</div>
+    <div class="tab" onclick="showTab('Makine2')">Makine2</div>
+    <div class="tab" onclick="showTab('Makine3')">Makine3</div>
+  </div>
+  <button onclick="toggleDarkMode()">🌙 Tema Değiştir</button>
+  <button onclick="exportCSV()">📤 Excel / CSV Dışa Aktar</button>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+  <div id="Makine1" class="content active"></div>
+  <div id="Makine2" class="content"></div>
+  <div id="Makine3" class="content"></div>
 
+  <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAV8qDKeSgE4jkN1d5nHBCrYAeV1DEIn8o",
       authDomain: "otomatesp32.firebaseapp.com",
       databaseURL: "https://otomatesp32-default-rtdb.europe-west1.firebasedatabase.app",
       projectId: "otomatesp32",
-      storageBucket: "otomatesp32.firebasestorage.app",
-      messagingSenderId: "229365905670",
-      appId: "1:229365905670:web:06dbc6b0da8ac6cd9f8687",
-      measurementId: "G-06ZY00K7J8"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    const refKayit = ref(db, "kayitlar");
-    onValue(refKayit, (snapshot) => {
-      const data = snapshot.val();
-      const tbody = document.getElementById("dataBody");
-      tbody.innerHTML = "";
-      for (let key in data) {
-        let row = data[key];
-        let tr = document.createElement("tr");
-        tr.innerHTML = `<td>${row.kullanici}</td><td>${row.urun}</td><td>${row.tarih}</td><td>${row.saat}</td>`;
-        tbody.appendChild(tr);
-      }
+    const machines = ["Makine1", "Makine2", "Makine3"];
+    const allData = {};
+
+    // Başlangıç stok bilgisi
+    const stokBilgisi = {
+      "Cikolata": 20,
+      "Kola": 15,
+      "Sandvic": 10
+    };
+
+    function showTab(id) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+      document.querySelector('.tab[onclick="showTab(\'' + id + '\')"]').classList.add('active');
+      document.getElementById(id).classList.add('active');
+    }
+
+    function formatDate(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+    }
+
+    function renderTable(machine, data) {
+      const container = document.getElementById(machine);
+      const canvasId = `chart-${machine}`;
+      container.innerHTML = `
+        <h2>${machine}</h2>
+        <label>Kullanıcı filtrele: <input type="text" id="filter-${machine}" oninput="filterTable('${machine}')"></label>
+        <label style="margin-left: 10px;">Tarih filtrele: <input type="date" id="date-${machine}" onchange="filterTable('${machine}')"></label>
+        <table id="table-${machine}">
+          <thead><tr><th>Kullanıcı</th><th>Ürün</th><th>Tarih</th></tr></thead>
+          <tbody>
+            ${data.map(entry => `
+              <tr>
+                <td>${entry.isim}</td>
+                <td>${entry.urun}</td>
+                <td data-raw="${entry.tarih}">${formatDate(entry.tarih)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <canvas id="${canvasId}" height="100"></canvas>
+      `;
+      drawChart(machine, data);
+    }
+
+    function drawChart(machine, data) {
+      const counts = {};
+      Object.keys(stokBilgisi).forEach(u => counts[u] = 0);
+      data.forEach(e => {
+        counts[e.urun] = (counts[e.urun] || 0) + 1;
+      });
+
+      const remaining = {};
+      Object.keys(counts).forEach(u => {
+        remaining[u] = Math.max((stokBilgisi[u] || 0) - counts[u], 0);
+      });
+
+      const ctx = document.getElementById(`chart-${machine}`).getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(counts),
+          datasets: [
+            {
+              label: 'Satılan Adet',
+              data: Object.values(counts),
+              backgroundColor: 'rgba(231, 76, 60, 0.6)',
+              borderColor: 'rgba(231, 76, 60, 1)',
+              borderWidth: 1
+            },
+            {
+              label: 'Kalan Stok',
+              data: Object.values(remaining),
+              backgroundColor: 'rgba(46, 204, 113, 0.6)',
+              borderColor: 'rgba(46, 204, 113, 1)',
+              borderWidth: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              beginAtZero: true,
+              precision: 0
+            }
+          }
+        }
+      });
+    }
+
+    function filterTable(machine) {
+      const input = document.getElementById(`filter-${machine}`).value.toLowerCase();
+      const dateInput = document.getElementById(`date-${machine}`).value;
+      const rows = document.querySelectorAll(`#table-${machine} tbody tr`);
+      rows.forEach(row => {
+        const name = row.cells[0].innerText.toLowerCase();
+        const tarihStr = row.cells[2].dataset.raw;
+        const matchName = name.includes(input);
+
+        let matchDate = true;
+        if (dateInput && tarihStr) {
+          const filterDate = new Date(dateInput);
+          const rowDate = new Date(tarihStr);
+          matchDate = filterDate.toDateString() === rowDate.toDateString();
+        }
+        row.style.display = matchName && matchDate ? '' : 'none';
+      });
+    }
+
+    function toggleDarkMode() {
+      document.body.classList.toggle("dark-mode");
+    }
+
+    function exportCSV() {
+      let csv = "\uFEFF" + "Makine,Kullanıcı,Ürün,Tarih\n";
+      machines.forEach(machine => {
+        if (allData[machine]) {
+          allData[machine].forEach(e => {
+            const formattedDate = formatDate(e.tarih);
+            csv += `"${machine}","${e.isim}","${e.urun}","${formattedDate}"\n`;
+          });
+        }
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "veriler.csv";
+      link.click();
+    }
+
+    machines.forEach(machine => {
+      db.ref(`islemler/${machine}`).on("value", snapshot => {
+        const entries = [];
+        snapshot.forEach(child => {
+          entries.push(child.val());
+        });
+        entries.reverse();
+        allData[machine] = entries;
+        renderTable(machine, entries);
+      });
     });
   </script>
 </body>
